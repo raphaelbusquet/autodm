@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "autodm",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "observability": { "enabled": true },
+  "triggers": { "crons": ["* * * * *"] },
+  "rules": [{ "type": "Text", "globs": ["**/*.html"], "fallthrough": true }],
+  "services": [{ "binding": "SELF", "service": "autodm" }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "autodm",
+      // Replaced by `npx wrangler d1 create autodm` output (see README).
+      "database_id": "COLE_AQUI_O_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "CONTACT_EMAIL": "seu-email@exemplo.com"
+  }
+  // Secrets (wrangler secret put): ADMIN_PASSWORD, IG_APP_ID, IG_APP_SECRET,
+  // IG_VERIFY_TOKEN, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+}

@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>AutoDM</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single column console — status strip, automation list with funnels, slide-in editor with live DM preview. */
+:root {
+  --bg: #06060E; --surface: #10101C; --surface-2: #181828; --fg: #ECECF6; --muted: #8C8CA8;
+  --accent: #4340EE; --accent-soft: #B9B7FF; --ok: #3DDC97; --warn: #E2622F; --danger: #F0566A;
+  --bubble-in: #22223A; --scrim: rgba(3, 3, 10, .6);
+  --display: 'Poppins', system-ui, sans-serif; --mono: 'JetBrains Mono', ui-monospace, monospace;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) {
+  --bg: #F3F3F9; --surface: #FFFFFF; --surface-2: #E9E9F3; --fg: #12121F; --muted: #5E5E78;
+  --accent: #4340EE; --accent-soft: #4340EE; --ok: #1A9E66; --warn: #C2501F; --danger: #CC2F45;
+  --bubble-in: #E4E4F0; --scrim: rgba(20, 20, 40, .35); color-scheme: light;
+} }
+:root[data-theme="light"] {
+  --bg: #F3F3F9; --surface: #FFFFFF; --surface-2: #E9E9F3; --fg: #12121F; --muted: #5E5E78;
+  --accent: #4340EE; --accent-soft: #4340EE; --ok: #1A9E66; --warn: #C2501F; --danger: #CC2F45;
+  --bubble-in: #E4E4F0; --scrim: rgba(20, 20, 40, .35); color-scheme: light;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: var(--bg); color: var(--fg); font: 400 15px/1.55 var(--display);
+  padding: calc(env(safe-area-inset-top, 0px) + 28px) 16px calc(env(safe-area-inset-bottom, 0px) + 48px);
+}
+.wrap { max-width: 1040px; margin: 0 auto; display: grid; gap: 28px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; font-weight: 600; }
+h1 { font-size: 22px; letter-spacing: -.01em; }
+h2 { font-size: 17px; }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 13px; }
+.label { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 500; }
+button, .btn {
+  font: 500 14px var(--display); border: 0; border-radius: 10px; padding: 9px 16px; cursor: pointer;
+  background: var(--surface-2); color: var(--fg); text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+}
+button.primary, .btn.primary { background: var(--accent); color: #fff; box-shadow: 0 6px 24px -8px var(--accent); }
+button.ghost { background: transparent; color: var(--muted); padding: 6px 10px; }
+button.danger { color: var(--danger); }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .btn:focus-visible {
+  outline: 2px solid var(--accent-soft); outline-offset: 2px;
+}
+input, textarea, select {
+  width: 100%; font: 400 14px var(--display); color: var(--fg); background: var(--surface-2);
+  border: 0; border-radius: 10px; padding: 10px 12px;
+}
+textarea { min-height: 76px; resize: vertical; }
+
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand b { background: var(--accent); color: #fff; padding: 0 8px; border-radius: 6px; }
+.conns { display: flex; flex-wrap: wrap; gap: 8px; }
+.conn { display: flex; align-items: center; gap: 8px; background: var(--surface); padding: 6px 6px 6px 12px; border-radius: 999px; font-size: 13px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+.dot.on { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.conn button, .conn .btn { padding: 4px 12px; font-size: 12px; border-radius: 999px; }
+
+.setup { background: var(--surface); border-radius: 16px; padding: 18px 20px; display: grid; gap: 12px; }
+.setup summary { cursor: pointer; font-weight: 600; }
+.urls { display: grid; gap: 8px; }
+.url { display: grid; grid-template-columns: 170px 1fr auto; gap: 10px; align-items: center; }
+.url code { min-width: 0; overflow-x: auto; white-space: nowrap; background: var(--surface-2); padding: 6px 10px; border-radius: 8px; }
+
+.tabs { display: flex; gap: 4px; background: var(--surface); padding: 4px; border-radius: 12px; width: max-content; }
+.tabs button { background: transparent; color: var(--muted); }
+.tabs button[aria-selected="true"] { background: var(--surface-2); color: var(--fg); }
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+
+.rules { display: grid; gap: 10px; }
+.rule { background: var(--surface); border-radius: 16px; padding: 14px 18px 14px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px 18px; align-items: center; }
+.covers { display: flex; align-items: center; }
+.cover { width: 54px; aspect-ratio: 9 / 14; max-width: 100%; border-radius: 10px; background: var(--surface-2); overflow: hidden; display: grid; place-items: center; flex: none; color: var(--muted); font-size: 11px; font-weight: 500; text-align: center; line-height: 1.2; text-decoration: none; box-shadow: 0 0 0 2px var(--surface); }
+.cover + .cover { margin-left: -26px; }
+.cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+a.cover:hover { box-shadow: 0 0 0 2px var(--accent); position: relative; z-index: 1; }
+.rule.off { opacity: .55; }
+.rule-main { min-width: 0; display: grid; gap: 8px; }
+.rule-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { font-size: 12px; padding: 2px 9px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
+.chip.kw { font-family: var(--mono); color: var(--accent-soft); }
+.chip.ig { color: #fff; background: linear-gradient(120deg, #C13584, #E2622F); }
+.chip.yt { color: #fff; background: #D9302C; }
+.chip.gate { color: var(--warn); }
+.funnel { display: flex; gap: 18px; font-variant-numeric: tabular-nums; }
+.funnel div { display: grid; text-align: right; }
+.funnel strong { font-size: 18px; font-weight: 600; }
+.funnel span { font-size: 11px; color: var(--muted); }
+.rule-actions { grid-column: 2 / -1; display: flex; gap: 4px; justify-content: flex-end; margin-top: -4px; }
+.empty { background: var(--surface); border-radius: 16px; padding: 32px; text-align: center; display: grid; gap: 10px; justify-items: center; }
+
+.tester { background: var(--surface); border-radius: 16px; padding: 16px 18px; display: grid; grid-template-columns: 140px 1fr auto; gap: 10px; align-items: center; }
+.tester output { grid-column: 1 / -1; font-size: 13px; }
+
+.log { background: var(--surface); border-radius: 16px; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 10px 14px; vertical-align: top; }
+th { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 500; }
+tr + tr td { border-top: 1px solid var(--surface-2); }
+.t-error { color: var(--danger); }
+.t-link_sent, .t-public_reply, .t-dm_sent { color: var(--ok); }
+.t-not_following, .t-dm_queued, .t-reply_queued { color: var(--warn); }
+.t-gave_up { color: var(--danger); }
+
+/* Editor drawer */
+.scrim { position: fixed; inset: 0; background: var(--scrim); backdrop-filter: blur(4px); z-index: 10; }
+.drawer {
+  position: fixed; inset: 0 0 0 auto; width: min(980px, 100%); background: var(--bg); z-index: 11; overflow-y: auto;
+  padding: calc(env(safe-area-inset-top, 0px) + 22px) 22px calc(env(safe-area-inset-bottom, 0px) + 22px);
+  display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-content: start;
+  box-shadow: -30px 0 80px -20px rgba(0, 0, 0, .5);
+}
+.drawer-head { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+form { display: grid; gap: 18px; min-width: 0; }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; }
+.field { display: grid; gap: 6px; }
+.field small { color: var(--muted); font-size: 12px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.seg { display: flex; gap: 4px; background: var(--surface); padding: 4px; border-radius: 12px; }
+.seg label { flex: 1; text-align: center; padding: 7px 10px; border-radius: 9px; cursor: pointer; color: var(--muted); font-size: 14px; }
+.seg input { position: absolute; opacity: 0; width: 0; }
+.seg label:has(input:checked) { background: var(--surface-2); color: var(--fg); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent-soft); }
+.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface); padding: 12px 14px; border-radius: 12px; cursor: pointer; }
+.toggle input { width: 40px; height: 22px; appearance: none; background: var(--surface-2); border-radius: 999px; position: relative; cursor: pointer; flex: none; padding: 0; }
+.toggle input::after { content: ''; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform .15s; }
+.toggle input:checked { background: var(--accent); }
+.toggle input:checked::after { transform: translateX(18px); background: #fff; }
+.group { background: var(--surface); border-radius: 14px; padding: 14px; display: grid; gap: 12px; }
+.group input, .group textarea { background: var(--surface-2); }
+.media { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; max-height: 280px; overflow-y: auto; }
+.media button { padding: 0; border-radius: 10px; overflow: hidden; display: grid; background: var(--surface-2); position: relative; aspect-ratio: 9 / 14; max-width: 100%; }
+.media img { width: 100%; height: 100%; object-fit: cover; }
+.media span { position: absolute; inset: auto 0 0; font-size: 10px; padding: 14px 6px 5px; background: linear-gradient(transparent, rgba(0,0,0,.8)); color: #fff; text-align: left; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.media button[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--accent); }
+.media button[aria-pressed="true"]::after { content: '✓'; position: absolute; top: 6px; right: 6px; background: var(--accent); color: #fff; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; }
+.form-error { color: var(--danger); font-size: 14px; }
+.form-foot { display: flex; gap: 8px; justify-content: flex-end; }
+
+.preview { position: sticky; top: 0; align-self: start; display: grid; gap: 10px; }
+.phone { background: var(--surface); border-radius: 26px; padding: 16px 14px; display: grid; gap: 8px; min-height: 420px; align-content: start; }
+.step { font-size: 11px; color: var(--muted); text-align: center; padding: 6px 0 2px; }
+.msg { max-width: 88%; padding: 9px 12px; border-radius: 18px; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.in { background: var(--bubble-in); justify-self: start; border-bottom-left-radius: 6px; }
+.msg.out { background: var(--accent); color: #fff; justify-self: end; border-bottom-right-radius: 6px; }
+.msg .cta { margin-top: 8px; background: rgba(255,255,255,.18); border-radius: 10px; padding: 6px; text-align: center; font-weight: 500; }
+.msg.comment { background: transparent; padding: 0; justify-self: stretch; max-width: 100%; color: var(--fg); }
+.msg.comment b { font-weight: 600; }
+
+.toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); transform: translateX(-50%); background: var(--fg); color: var(--bg); padding: 10px 18px; border-radius: 999px; font-size: 14px; z-index: 20; }
+
+@media (max-width: 760px) {
+  .drawer { grid-template-columns: minmax(0, 1fr); padding-inline: 16px; }
+  .preview { position: static; }
+  .rule { grid-template-columns: auto minmax(0, 1fr); }
+  .funnel { grid-column: 1 / -1; }
+  .rule-actions { grid-column: 1 / -1; }
+  .funnel div { text-align: left; }
+  .url { grid-template-columns: 1fr auto; }
+  .url .label { grid-column: 1 / -1; }
+  .tester { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><h1><b>Auto</b>DM</h1><span class="muted">comentário → DM</span></div>
+    <div class="conns" id="conns"></div>
+  </header>
+
+  <details class="setup" id="setup">
+    <summary>Configuração das plataformas</summary>
+    <p class="muted" style="margin:0">Cole estes endereços no painel de desenvolvedor da Meta e no Google Cloud. O passo a passo completo está no README do projeto.</p>
+    <div class="urls" id="urls"></div>
+  </details>
+
+  <div class="bar">
+    <div class="tabs" role="tablist">
+      <button role="tab" aria-selected="true" data-tab="rules" id="tab-rules">Automações</button>
+      <button role="tab" aria-selected="false" data-tab="log" id="tab-log">Atividade</button>
+    </div>
+    <button class="primary" id="new-rule">+ Nova automação</button>
+  </div>
+
+  <section id="panel-rules" style="display:grid;gap:16px">
+    <div class="rules" id="rules"></div>
+    <form class="tester" id="tester">
+      <select id="test-platform"><option value="instagram:comment">IG comentário</option><option value="instagram:dm">IG DM</option><option value="youtube:comment">YT comentário</option></select>
+      <input id="test-text" placeholder="Teste um comentário, ex.: quero o LINK!">
+      <button type="submit">Testar</button>
+      <output id="test-out" class="muted">Mostra qual automação responderia a esse texto (considera todos os posts).</output>
+    </form>
+  </section>
+
+  <section id="panel-log" hidden>
+    <div class="log"><table><thead><tr><th>Quando</th><th>Evento</th><th>Automação</th><th>Pessoa</th><th>Detalhe</th></tr></thead><tbody id="events"></tbody></table></div>
+  </section>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+<aside class="drawer" id="drawer" hidden aria-label="Editar automação">
+  <div class="drawer-head"><h2 id="drawer-title">Nova automação</h2><button class="ghost" id="close-drawer" aria-label="Fechar">✕</button></div>
+  <form id="form" novalidate>
+    <fieldset>
+      <div class="field"><label class="label" for="f-name">Nome</label><input id="f-name" name="name" placeholder="Ex.: Ebook grátis — Reel de terça"></div>
+      <div class="row">
+        <div class="field"><span class="label">Plataforma</span>
+          <div class="seg"><label><input type="radio" name="platform" value="instagram" id="f-p-ig" checked>Instagram</label><label><input type="radio" name="platform" value="youtube" id="f-p-yt">YouTube</label></div></div>
+        <div class="field" id="trigger-field"><span class="label">Gatilho</span>
+          <div class="seg"><label><input type="radio" name="trigger" value="comment" id="f-t-c" checked>Comentário</label><label><input type="radio" name="trigger" value="dm" id="f-t-dm">Mensagem (DM)</label></div></div>
+      </div>
+    </fieldset>
+
+    <fieldset id="posts-field">
+      <span class="label">Em quais posts</span>
+      <div class="seg"><label><input type="radio" name="scope" value="all" id="f-s-all" checked>Todos</label><label><input type="radio" name="scope" value="some" id="f-s-some">Escolher posts</label></div>
+      <div id="media-wrap" hidden><div class="media" id="media"></div><small class="muted" id="media-note"></small></div>
+    </fieldset>
+
+    <fieldset>
+      <div class="row">
+        <div class="field"><label class="label" for="f-keywords">Palavras-chave</label><input id="f-keywords" name="keywords" placeholder="link, quero, eu quero"><small>Separe por vírgula. Vazio = qualquer comentário. Ignora maiúsculas e acentos.</small></div>
+        <div class="field"><label class="label" for="f-match">Correspondência</label><select id="f-match" name="match_mode"><option value="contains">Contém a palavra</option><option value="exact">Comentário é exatamente a palavra</option></select></div>
+      </div>
+      <div class="field" id="replies-field"><label class="label" for="f-replies">Resposta pública no comentário</label><textarea id="f-replies" name="public_replies" placeholder="Te mandei no direct, @{username}! 📩&#10;Confere seu direct 👀&#10;Enviado! Dá uma olhada na DM"></textarea><small>Uma por linha; o app sorteia uma por vez para não parecer spam. Use {nome} ou {username}.</small></div>
+    </fieldset>
+
+    <fieldset id="dm-fields">
+      <div class="field"><label class="label" for="f-dm">Mensagem no direct</label><textarea id="f-dm" name="dm_text" placeholder="Boa, {nome}! 🙌 Toca no botão abaixo que eu te mando o material."></textarea><small>{nome} = primeiro nome. Na 1ª mensagem o Instagram ainda não libera o nome, então vem do @ (coincubo → Coincubo). Depois do toque no botão, usa o nome real do perfil.</small></div>
+      <label class="toggle" for="f-follow"><span><strong style="font-weight:500">Exigir que a pessoa me siga</strong><br><small class="muted">Antes do link, verifica se ela te segue. Se não seguir, pede para seguir e tentar de novo.</small></span><input type="checkbox" id="f-follow" name="require_follow"></label>
+      <div class="group" id="follow-group" hidden>
+        <div class="field"><label class="label" for="f-button">Texto do botão</label><input id="f-button" name="button_label" maxlength="20" placeholder="Quero o link!"></div>
+        <div class="field"><label class="label" for="f-notfollow">Se ainda não te segue</label><textarea id="f-notfollow" name="not_following_text" placeholder="Quase lá! Me segue aqui no perfil e toca no botão abaixo que o link chega na hora 😉"></textarea></div>
+        <div class="field"><label class="label" for="f-followbtn">Botão depois de seguir</label><input id="f-followbtn" name="follow_button_label" maxlength="20" placeholder="Já segui!"></div>
+        <div class="field"><label class="label" for="f-still">Se tocar no botão e ainda não seguiu</label><textarea id="f-still" name="still_not_following_text" placeholder="Hmm, parece que você ainda não me segue 🤔 Segue e toca no botão de novo!"></textarea></div>
+        <div class="row">
+          <div class="field"><label class="label" for="f-delay">Esperar antes do link (min)</label><input id="f-delay" name="link_delay_minutes" type="number" min="0" max="600" step="1" placeholder="0"><small>Na hora de enviar, confere de novo se ainda segue. Quem seguir e deixar de seguir logo não recebe.</small></div>
+          <div class="field"><label class="label" for="f-wait">Mensagem enquanto espera</label><textarea id="f-wait" name="wait_text" placeholder="Follow confirmado ✅ Já já te mando o link por aqui!"></textarea></div>
+        </div>
+        <div class="field"><label class="label" for="f-linktext">Mensagem final (já segue)</label><textarea id="f-linktext" name="link_text" placeholder="Valeu por seguir! Aqui está 👇"></textarea></div>
+      </div>
+      <div class="row">
+        <div class="field"><label class="label" for="f-url">Link</label><input id="f-url" name="link_url" type="url" placeholder="https://..."></div>
+        <div class="field"><label class="label" for="f-linkbtn">Texto do botão do link</label><input id="f-linkbtn" name="link_button_label" maxlength="20" placeholder="Abrir link"></div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <div class="row">
+        <div class="field"><label class="label" for="f-priority">Prioridade</label><input id="f-priority" name="priority" type="number" value="0"><small>Maior vence quando duas automações combinam.</small></div>
+        <label class="toggle" for="f-active" style="align-self:start"><span>Ativa</span><input type="checkbox" id="f-active" name="active" checked></label>
+      </div>
+    </fieldset>
+    <p class="form-error" id="form-error" hidden></p>
+    <div class="form-foot"><button type="button" class="ghost" id="cancel">Cancelar</button><button type="submit" class="primary">Salvar automação</button></div>
+  </form>
+
+  <div class="preview">
+    <span class="label">Prévia</span>
+    <div class="phone" id="preview"></div>
+  </div>
+</aside>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const api = async (path, opts = {}) => {
+  const res = await fetch(path, { ...opts, headers: { 'content-type': 'application/json' }, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Erro ${res.status}`);
+  return data;
+};
+const toast = (msg) => { const t = $('#toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => (t.hidden = true), 2600); };
+const lines = (s) => s.split('\n').map((x) => x.trim()).filter(Boolean);
+const csv = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
+
+let state = { rules: [], stats: {}, status: null, editing: null, selected: new Set(), mediaCache: {} };
+
+// ---------- Status ----------
+async function loadStatus() {
+  const s = (state.status = await api('/api/status'));
+  const conn = (key, name, label) => {
+    const p = s[key];
+    const on = p.connected;
+    const ready = s.configured[key];
+    return `<div class="conn"><span class="dot ${on ? 'on' : ''}"></span><span>${name}${on ? ` · <span class="muted">${esc(label)}</span>` : ''}</span>
+      ${on ? `<button class="ghost" data-disconnect="${key}">Desconectar</button>`
+           : ready ? `<a class="btn primary" href="/auth/${key}/start">Conectar</a>` : `<span class="chip">faltam chaves</span>`}</div>`;
+  };
+  $('#conns').innerHTML = conn('instagram', 'Instagram', s.instagram.username && '@' + s.instagram.username) + conn('youtube', 'YouTube', s.youtube.title);
+  const rows = [['Webhook (Meta)', s.urls.webhook], ['Redirect Instagram', s.urls.igRedirect], ['Redirect Google', s.urls.ytRedirect], ['Política de privacidade', s.urls.privacy]];
+  $('#urls').innerHTML = rows.map(([k, v], i) => `<div class="url"><span class="label">${k}</span><code class="mono" id="url-${i}">${esc(v)}</code><button class="ghost" data-copy="${esc(v)}">Copiar</button></div>`).join('');
+  if (!s.instagram.connected && !s.youtube.connected) $('#setup').open = true;
+}
+document.addEventListener('click', async (e) => {
+  const copy = e.target.closest('[data-copy]');
+  if (copy) { try { await navigator.clipboard.writeText(copy.dataset.copy); toast('Copiado'); } catch { toast('Selecione e copie manualmente'); } }
+  const dis = e.target.closest('[data-disconnect]');
+  if (dis) {
+    if (dis.dataset.armed) { await api(`/api/disconnect/${dis.dataset.disconnect}`, { method: 'POST' }); toast('Desconectado'); loadStatus(); }
+    else { dis.dataset.armed = '1'; dis.textContent = 'Confirmar?'; setTimeout(() => { delete dis.dataset.armed; dis.textContent = 'Desconectar'; }, 3000); }
+  }
+});
+
+// ---------- Rules ----------
+async function loadRules() {
+  const [rules, stats] = await Promise.all([api('/api/rules'), api('/api/stats')]);
+  state.rules = rules; state.stats = stats.rules;
+  const el = $('#rules');
+  if (!rules.length) {
+    el.innerHTML = `<div class="empty"><h2>Nenhuma automação ainda</h2><p class="muted" style="margin:0;max-width:46ch">Crie a primeira: escolha um post, a palavra-chave que as pessoas vão comentar e o que elas recebem no direct.</p><button class="primary" data-new>+ Criar automação</button></div>`;
+    return;
+  }
+  el.innerHTML = rules.map((r) => {
+    const st = stats.rules[r.id] || {};
+    const funnel = r.platform === 'youtube'
+      ? [['Disparos', st.triggered], ['Respostas', st.public_reply]]
+      : r.require_follow
+        ? [['Disparos', st.triggered], ['DMs', st.dm_sent], ['Cliques', st.button_click], ['Links', st.link_sent]]
+        : [['Disparos', st.triggered], ['DMs', st.dm_sent], ['Respostas', st.public_reply]];
+    const kws = r.keywords.length ? r.keywords.map((k) => `<span class="chip kw">${esc(k)}</span>`).join('') : '<span class="chip">qualquer texto</span>';
+    const shown = r.media_ids.slice(0, 3);
+    const covers = r.trigger === 'dm'
+      ? '<span class="cover">DM</span>'
+      : !r.media_ids.length
+        ? '<span class="cover">Todos os posts</span>'
+        : shown.map((id) => r.platform === 'youtube'
+            ? `<a class="cover" href="https://youtube.com/shorts/${esc(id)}" target="_blank" rel="noopener"><img src="https://i.ytimg.com/vi/${esc(id)}/hqdefault.jpg" alt="" loading="lazy"></a>`
+            : `<a class="cover" data-cover="${esc(id)}" target="_blank" rel="noopener"></a>`).join('')
+          + (r.media_ids.length > 3 ? `<span class="cover">+${r.media_ids.length - 3}</span>` : '');
+    return `<article class="rule ${r.active ? '' : 'off'}">
+      <div class="covers">${covers}</div>
+      <div class="rule-main">
+        <div class="rule-title"><h3 style="font-size:15px">${esc(r.name)}</h3>
+          <span class="chip ${r.platform === 'instagram' ? 'ig' : 'yt'}">${r.platform === 'instagram' ? 'Instagram' : 'YouTube'}</span>
+          <span class="chip">${r.trigger === 'dm' ? 'DM' : 'comentário'} · ${r.media_ids.length ? r.media_ids.length + ' post(s)' : 'todos os posts'}</span>
+          ${r.require_follow ? '<span class="chip gate">exige seguir</span>' : ''}${r.active ? '' : '<span class="chip">pausada</span>'}</div>
+        <div class="chips">${kws}</div>
+      </div>
+      <div class="funnel">${funnel.map(([k, v]) => `<div><strong>${v || 0}</strong><span>${k}</span></div>`).join('')}</div>
+      <div class="rule-actions"><button class="ghost" data-toggle="${r.id}">${r.active ? 'Pausar' : 'Ativar'}</button><button class="ghost" data-edit="${r.id}">Editar</button><button class="ghost danger" data-del="${r.id}">Excluir</button></div>
+    </article>`;
+  }).join('');
+  loadCovers();
+}
+
+// Instagram cover URLs expire, so fetch them fresh for the posts on screen.
+async function loadCovers() {
+  const els = [...document.querySelectorAll('[data-cover]')];
+  const ids = [...new Set(els.map((el) => el.dataset.cover))];
+  for (let i = 0; i < ids.length; i += 40) {
+    let info = [];
+    try { info = await api(`/api/media-info/instagram?ids=${ids.slice(i, i + 40).join(',')}`); } catch { continue; }
+    for (const m of info) {
+      for (const el of document.querySelectorAll(`[data-cover="${CSS.escape(m.id)}"]`)) {
+        el.href = m.url;
+        el.title = m.title;
+        el.innerHTML = m.thumbnail ? `<img src="${esc(m.thumbnail)}" alt="" loading="lazy">` : 'Post';
+      }
+    }
+  }
+}
+$('#rules').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.new !== undefined) return openEditor();
+  const find = (id) => state.rules.find((r) => r.id === Number(id));
+  if (b.dataset.edit) openEditor(find(b.dataset.edit));
+  if (b.dataset.toggle) { const r = find(b.dataset.toggle); await api(`/api/rules/${r.id}`, { method: 'PUT', body: { ...r, active: !r.active } }); loadRules(); }
+  if (b.dataset.del) {
+    if (b.dataset.armed) { await api(`/api/rules/${b.dataset.del}`, { method: 'DELETE' }); toast('Automação excluída'); loadRules(); }
+    else { b.dataset.armed = '1'; b.textContent = 'Clique de novo para excluir'; setTimeout(() => { delete b.dataset.armed; b.textContent = 'Excluir'; }, 3000); }
+  }
+});
+$('#new-rule').onclick = () => openEditor();
+
+// ---------- Editor ----------
+const form = $('#form');
+const field = (n) => form.elements[n];
+function openEditor(rule) {
+  state.editing = rule || null;
+  form.reset();
+  $('#form-error').hidden = true;
+  $('#drawer-title').textContent = rule ? 'Editar automação' : 'Nova automação';
+  const r = rule || { platform: 'instagram', trigger: 'comment', media_ids: [], keywords: [], match_mode: 'contains', public_replies: [], active: true, priority: 0 };
+  field('name').value = r.name || '';
+  form.querySelector(`[name=platform][value=${r.platform}]`).checked = true;
+  form.querySelector(`[name=trigger][value=${r.trigger}]`).checked = true;
+  form.querySelector(`[name=scope][value=${r.media_ids.length ? 'some' : 'all'}]`).checked = true;
+  state.selected = new Set(r.media_ids);
+  field('keywords').value = r.keywords.join(', ');
+  field('match_mode').value = r.match_mode;
+  field('public_replies').value = r.public_replies.join('\n');
+  for (const k of ['dm_text', 'button_label', 'not_following_text', 'follow_button_label', 'still_not_following_text', 'link_text', 'wait_text', 'link_url', 'link_button_label']) field(k).value = r[k] || '';
+  field('link_delay_minutes').value = r.link_delay_minutes || '';
+  field('require_follow').checked = !!r.require_follow;
+  field('active').checked = r.active !== false;
+  field('priority').value = r.priority || 0;
+  $('#drawer').hidden = $('#scrim').hidden = false;
+  sync();
+  field('name').focus();
+}
+function closeEditor() { $('#drawer').hidden = $('#scrim').hidden = true; }
+$('#close-drawer').onclick = $('#cancel').onclick = $('#scrim').onclick = closeEditor;
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('#drawer').hidden) closeEditor(); });
+
+function values() {
+  const platform = form.querySelector('[name=platform]:checked').value;
+  return {
+    name: field('name').value.trim(),
+    platform,
+    trigger: platform === 'youtube' ? 'comment' : form.querySelector('[name=trigger]:checked').value,
+    media_ids: form.querySelector('[name=scope]:checked').value === 'some' ? [...state.selected] : [],
+    keywords: csv(field('keywords').value),
+    match_mode: field('match_mode').value,
+    public_replies: lines(field('public_replies').value),
+    dm_text: field('dm_text').value.trim(),
+    button_label: field('button_label').value.trim(),
+    require_follow: platform === 'instagram' && field('require_follow').checked,
+    not_following_text: field('not_following_text').value.trim(),
+    follow_button_label: field('follow_button_label').value.trim(),
+    still_not_following_text: field('still_not_following_text').value.trim(),
+    link_text: field('link_text').value.trim(),
+    wait_text: field('wait_text').value.trim(),
+    link_delay_minutes: Math.max(0, Math.round(Number(field('link_delay_minutes').value) || 0)),
+    link_url: field('link_url').value.trim(),
+    link_button_label: field('link_button_label').value.trim(),
+    active: field('active').checked,
+    priority: Number(field('priority').value) || 0,
+  };
+}
+
+async function loadMedia(platform) {
+  const wrap = $('#media');
+  if (!state.mediaCache[platform]) {
+    wrap.innerHTML = '<span class="muted">Carregando posts…</span>';
+    try { state.mediaCache[platform] = await api(`/api/media/${platform}`); }
+    catch (err) { wrap.innerHTML = ''; $('#media-note').textContent = `Não deu para listar os posts: ${err.message}. Conecte a conta primeiro.`; return; }
+  }
+  const items = state.mediaCache[platform];
+  $('#media-note').textContent = `${state.selected.size} selecionado(s)`;
+  wrap.innerHTML = items.map((m) => `<button type="button" aria-pressed="${state.selected.has(m.id)}" data-media="${esc(m.id)}" title="${esc(m.title)}">
+    ${m.thumbnail ? `<img src="${esc(m.thumbnail)}" alt="" loading="lazy">` : ''}<span>${esc(m.title)}</span></button>`).join('') || '<span class="muted">Nenhum post encontrado.</span>';
+}
+$('#media').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-media]'); if (!b) return;
+  const id = b.dataset.media;
+  state.selected.has(id) ? state.selected.delete(id) : state.selected.add(id);
+  b.setAttribute('aria-pressed', state.selected.has(id));
+  $('#media-note').textContent = `${state.selected.size} selecionado(s)`;
+});
+
+let lastScope = '';
+function sync() {
+  const v = values();
+  const ig = v.platform === 'instagram';
+  $('#trigger-field').hidden = !ig;
+  $('#dm-fields').hidden = !ig;
+  $('#replies-field').hidden = v.trigger === 'dm';
+  $('#posts-field').hidden = v.trigger === 'dm';
+  $('#follow-group').hidden = !v.require_follow;
+  const some = form.querySelector('[name=scope]:checked').value === 'some' && v.trigger === 'comment';
+  $('#media-wrap').hidden = !some;
+  const scopeKey = some ? v.platform : '';
+  if (some && scopeKey !== lastScope) loadMedia(v.platform);
+  lastScope = scopeKey;
+  renderPreview(v);
+}
+form.addEventListener('input', sync);
+form.addEventListener('change', (e) => {
+  if (e.target.name === 'platform') state.selected = new Set();
+  sync();
+});
+
+function renderPreview(v) {
+  const user = 'ana.souza';
+  const fill = (s) => s.replaceAll('{username}', user).replaceAll('{nome}', 'Ana');
+  const kw = v.keywords[0] || 'quero';
+  const out = [];
+  if (v.trigger === 'dm') out.push(`<div class="msg in">${esc(kw)}</div>`);
+  else out.push(`<div class="step">Comentário no post</div><div class="msg comment"><b>${user}</b> eu ${esc(kw)}! 🙏</div>`);
+  if (v.public_replies.length && v.trigger === 'comment') out.push(`<div class="msg comment" style="padding-left:16px"><b>você</b> ${esc(fill(v.public_replies[0]))}</div>`);
+  if (v.platform === 'youtube') {
+    if (!v.public_replies.length) out.push('<p class="muted" style="font-size:13px">Escreva uma resposta pública. O YouTube não tem direct.</p>');
+    $('#preview').innerHTML = out.join(''); return;
+  }
+  const linkBtn = v.link_url ? `<div class="cta">${esc(v.link_button_label || 'Abrir link')}</div>` : '';
+  const askBtn = `<div class="cta">${esc(v.button_label || 'Quero o link!')}</div>`;
+  if (v.dm_text || v.link_url) {
+    out.push('<div class="step">Direct</div>');
+    out.push(`<div class="msg out">${esc(fill(v.dm_text || '…'))}${v.require_follow ? askBtn : linkBtn}</div>`);
+  }
+  if (v.require_follow) {
+    const followLabel = v.follow_button_label || 'Já segui!';
+    const followBtn = `<div class="cta">${esc(followLabel)}</div>`;
+    out.push(`<div class="msg in">${esc(v.button_label || 'Quero o link!')}</div>`);
+    out.push('<div class="step">Se ainda não segue</div>');
+    out.push(`<div class="msg out">${esc(fill(v.not_following_text || 'Me segue primeiro e depois toca no botão de novo 😉'))}${followBtn}</div>`);
+    out.push(`<div class="msg in">${esc(followLabel)}</div>`);
+    out.push('<div class="step">Tocou e ainda não segue</div>');
+    out.push(`<div class="msg out">${esc(fill(v.still_not_following_text || 'Hmm, parece que você ainda não me segue 🤔 Segue e toca no botão de novo!'))}${followBtn}</div>`);
+    out.push('<div class="step">Depois de seguir</div>');
+    if (v.link_delay_minutes > 0) {
+      out.push(`<div class="msg out">${esc(fill(v.wait_text || 'Follow confirmado ✅ Já já te mando o link por aqui!'))}</div>`);
+      out.push(`<div class="step">${v.link_delay_minutes} min depois, se ainda segue</div>`);
+    }
+    out.push(`<div class="msg out">${esc(fill(v.link_text || v.dm_text || '…'))}${linkBtn}</div>`);
+  }
+  $('#preview').innerHTML = out.join('');
+}
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const v = values();
+  try {
+    if (state.editing) await api(`/api/rules/${state.editing.id}`, { method: 'PUT', body: v });
+    else await api('/api/rules', { method: 'POST', body: v });
+    closeEditor(); toast('Automação salva'); loadRules();
+  } catch (err) { const el = $('#form-error'); el.textContent = err.message; el.hidden = false; }
+});
+
+// ---------- Tester ----------
+$('#tester').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const [platform, trigger] = $('#test-platform').value.split(':');
+  const text = $('#test-text').value;
+  const { rule } = await api('/api/test', { method: 'POST', body: { platform, trigger, text } });
+  $('#test-out').innerHTML = rule ? `Dispara <strong>${esc(rule.name)}</strong>.` : 'Nenhuma automação responderia a esse texto.';
+});
+
+// ---------- Activity ----------
+const LABELS = { triggered: 'Disparou', dm_sent: 'DM enviada', public_reply: 'Respondeu comentário', button_click: 'Clicou no botão', not_following: 'Não segue ainda', link_sent: 'Link enviado', skipped_repeat: 'Ignorado (repetido 24h)', dm_queued: 'DM na fila', button_repeat: 'Clique repetido ignorado', link_scheduled: 'Link agendado', unfollowed: 'Deixou de seguir antes do link', reply_queued: 'Resposta na fila (limite da Meta)', gave_up: 'DM desistida após 24h', error: 'Erro' };
+async function loadEvents() {
+  const rows = await api('/api/events');
+  $('#events').innerHTML = rows.length ? rows.map((e) => `<tr>
+    <td class="muted">${new Date(e.created_at * 1000).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' })}</td>
+    <td class="t-${e.type}">${LABELS[e.type] || e.type}</td>
+    <td>${esc(e.rule_name || '—')}</td>
+    <td>${e.username ? '@' + esc(e.username.replace(/^@/, '')) : '<span class="muted mono">' + esc(e.user_id.slice(-6) || '—') + '</span>'}</td>
+    <td class="muted" style="max-width:340px;overflow-wrap:anywhere">${esc(e.detail)}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="muted" style="padding:28px">Nada ainda. Quando alguém comentar uma palavra-chave, aparece aqui.</td></tr>';
+}
+document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => {
+  document.querySelectorAll('[data-tab]').forEach((x) => x.setAttribute('aria-selected', x === b));
+  $('#panel-rules').hidden = b.dataset.tab !== 'rules';
+  $('#panel-log').hidden = b.dataset.tab !== 'log';
+  if (b.dataset.tab === 'log') loadEvents();
+});
+
+loadStatus().catch((err) => toast(err.message));
+loadRules().catch((err) => toast(err.message));
+</script>
+</body>
+</html>

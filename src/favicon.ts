@@ -1,0 +1,2 @@
+// Indigo squircle with a chat bubble — same mark as the Meta app icon, reduced for 16px.
+export const FAVICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#4340EE"/><path d="M16 20a6 6 0 0 1 6-6h20a6 6 0 0 1 6 6v14a6 6 0 0 1-6 6H28l-8 7v-7a4 4 0 0 1-4-4z" fill="#fff"/><circle cx="24" cy="27" r="3" fill="#4340EE"/><circle cx="32" cy="27" r="3" fill="#4340EE"/><circle cx="40" cy="27" r="3" fill="#4340EE"/></svg>`;
