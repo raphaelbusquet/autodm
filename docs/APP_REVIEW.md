@@ -1,5 +1,7 @@
 # App Review — AutoDM
 
+Este roteiro é um ponto de partida para a revisão **do seu próprio app**. Ajuste os textos ao comportamento que você realmente configurou e aos requisitos atuais apresentados pela Meta. O modo Live e a busca periódica de comentários não substituem acesso avançado ou revisão quando exigidos. Não há garantia de aprovação ou prazo.
+
 Pedido: **Acesso Avançado** para as 3 permissões abaixo. Textos em inglês (revisores da Meta), prontos para colar.
 
 Onde: developers.facebook.com → app AutoDM → **Análise do app → Permissões e recursos** → em cada permissão, **Solicitar acesso avançado**. Depois **Análise do app → Solicitações** → preencher e enviar.
@@ -43,9 +45,9 @@ Grave a tela do computador + o celular (espelhado ou gravação separada). **Leg
 
 ## Instruções para o revisor (campo "Testing instructions")
 
-> AutoDM is a single-account tool, so reviewers cannot connect their own account. The screencast shows the complete flow. Dashboard: https://autodm.YOUR-SUBDOMAIN.workers.dev/admin (user: admin, password: provided in this field). Privacy policy: https://autodm.YOUR-SUBDOMAIN.workers.dev/privacy
+> AutoDM is a single-account tool. Follow the testing procedure and use the dedicated test account or environment supplied with this review submission. The screencast shows the complete flow. Dashboard: https://autodm.YOUR-SUBDOMAIN.workers.dev/admin. Privacy policy: https://autodm.YOUR-SUBDOMAIN.workers.dev/privacy
 
-Colocar a senha do painel no campo. **Trocar a senha depois da aprovação** (`npx wrangler secret put ADMIN_PASSWORD`).
+Se a Meta solicitar credenciais de teste no formulário privado, use uma instalação/conta dedicada à revisão. **Não forneça a senha do painel de produção, tokens ou segredos do app.** Nunca coloque credenciais em commits, vídeos ou issues públicos. Revogue o acesso temporário após a revisão.
 
 ## Possíveis pedidos da Meta
 

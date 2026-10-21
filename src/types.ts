@@ -9,6 +9,10 @@ export interface Env {
   GOOGLE_CLIENT_ID: string;
   GOOGLE_CLIENT_SECRET: string;
   CONTACT_EMAIL: string;
+  // Ebook site: POST endpoint that issues 24h welcome-price links, and its admin token (secret).
+  EBOOK_OFFER_URL?: string;
+  EBOOK_OFFER_TOKEN?: string;
+  EBOOK?: Fetcher;
   // Service binding to this same Worker, used to fan work out into separate invocations.
   SELF?: Fetcher;
   // Optional overrides, used by local tests to point at a mock server.

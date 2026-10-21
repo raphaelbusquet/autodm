@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>AutoDM</title>
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AutoDM">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#06060E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
 <style>
@@ -77,6 +83,10 @@ header { display: flex; flex-wrap: wrap; align-items: center; justify-content: s
 .bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
 
 .rules { display: grid; gap: 10px; }
+.welcome { background: var(--surface); border-radius: 16px; padding: 16px 18px; display: grid; gap: 12px; }
+.welcome-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.welcome-grid { display: grid; grid-template-columns: 140px minmax(0, 1fr) 200px; gap: 12px; }
+@media (max-width: 720px) { .welcome-grid { grid-template-columns: 1fr; } }
 .rule { background: var(--surface); border-radius: 16px; padding: 14px 18px 14px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px 18px; align-items: center; }
 .covers { display: flex; align-items: center; }
 .cover { width: 54px; aspect-ratio: 9 / 14; max-width: 100%; border-radius: 10px; background: var(--surface-2); overflow: hidden; display: grid; place-items: center; flex: none; color: var(--muted); font-size: 11px; font-weight: 500; text-align: center; line-height: 1.2; text-decoration: none; box-shadow: 0 0 0 2px var(--surface); }
@@ -196,6 +206,21 @@ fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 12px; }
   </div>
 
   <section id="panel-rules" style="display:grid;gap:16px">
+    <form class="welcome" id="welcome" novalidate>
+      <div class="welcome-head">
+        <div><strong style="font-weight:600">Boas-vindas a novos seguidores</strong><br><small class="muted">Não é uma automação de comentário. Quem segue você por qualquer automação com "exigir seguir" recebe esta DM <b>uma única vez</b>, depois do link daquela automação. Precisa sair em até ~22h do toque no botão (regra do Instagram).</small></div>
+        <label class="toggle" for="w-active" style="padding:8px 12px;flex:none"><span>Ligada</span><input type="checkbox" id="w-active"></label>
+      </div>
+      <div class="welcome-grid">
+        <div class="field"><label class="label" for="w-delay">Esperar (min)</label><input id="w-delay" type="number" min="1" max="600" step="1"><small>Depois do link da outra automação.</small></div>
+        <div class="field"><label class="label" for="w-text">Mensagem</label><textarea id="w-text" rows="6" placeholder="Olá, {nome}! Passando aqui pra te entregar…"></textarea><small>{nome} = nome do perfil.</small></div>
+        <div style="display:grid;gap:12px;align-content:start">
+          <div class="field"><label class="label" for="w-button">Texto do botão</label><input id="w-button" maxlength="20"></div>
+          <div class="field"><label class="label" for="w-link">Link</label><input id="w-link"><small>{oferta_ebook} = link de 24h com preço de boas-vindas, gerado na hora.</small></div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:flex-end"><button class="primary" type="submit">Salvar boas-vindas</button></div>
+    </form>
     <div class="rules" id="rules"></div>
     <form class="tester" id="tester">
       <select id="test-platform"><option value="instagram:comment">IG comentário</option><option value="instagram:dm">IG DM</option><option value="youtube:comment">YT comentário</option></select>
@@ -280,6 +305,7 @@ const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
 const api = async (path, opts = {}) => {
   const res = await fetch(path, { ...opts, headers: { 'content-type': 'application/json' }, body: opts.body ? JSON.stringify(opts.body) : undefined });
+  if (res.status === 401) { location.href = '/login'; throw new Error('Sessão expirada'); }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `Erro ${res.status}`);
   return data;
@@ -542,7 +568,7 @@ $('#tester').addEventListener('submit', async (e) => {
 });
 
 // ---------- Activity ----------
-const LABELS = { triggered: 'Disparou', dm_sent: 'DM enviada', public_reply: 'Respondeu comentário', button_click: 'Clicou no botão', not_following: 'Não segue ainda', link_sent: 'Link enviado', skipped_repeat: 'Ignorado (repetido 24h)', dm_queued: 'DM na fila', button_repeat: 'Clique repetido ignorado', link_scheduled: 'Link agendado', unfollowed: 'Deixou de seguir antes do link', reply_queued: 'Resposta na fila (limite da Meta)', gave_up: 'DM desistida após 24h', error: 'Erro' };
+const LABELS = { triggered: 'Disparou', dm_sent: 'DM enviada', public_reply: 'Respondeu comentário', button_click: 'Clicou no botão', not_following: 'Não segue ainda', link_sent: 'Link enviado', skipped_repeat: 'Ignorado (repetido 24h)', dm_queued: 'DM na fila', button_repeat: 'Clique repetido ignorado', link_scheduled: 'Link agendado', unfollowed: 'Deixou de seguir antes do link', reply_queued: 'Resposta na fila (limite da Meta)', gave_up: 'DM desistida após 24h', welcome_scheduled: 'Boas-vindas agendada', welcome_sent: 'Boas-vindas enviada', welcome_skipped: 'Boas-vindas cancelada (deixou de seguir)', error: 'Erro' };
 async function loadEvents() {
   const rows = await api('/api/events');
   $('#events').innerHTML = rows.length ? rows.map((e) => `<tr>
@@ -560,6 +586,27 @@ document.querySelectorAll('[data-tab]').forEach((b) => b.onclick = () => {
   if (b.dataset.tab === 'log') loadEvents();
 });
 
+// ---------- Welcome offer ----------
+async function loadWelcome() {
+  const w = await api('/api/welcome');
+  $('#w-active').checked = w.welcome_active === '1';
+  $('#w-delay').value = w.welcome_delay_minutes;
+  $('#w-text').value = w.welcome_text;
+  $('#w-button').value = w.welcome_button;
+  $('#w-link').value = w.welcome_link;
+}
+$('#welcome').onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    await api('/api/welcome', { method: 'PUT', body: {
+      welcome_active: $('#w-active').checked ? '1' : '0', welcome_delay_minutes: $('#w-delay').value,
+      welcome_text: $('#w-text').value, welcome_button: $('#w-button').value, welcome_link: $('#w-link').value,
+    } });
+    toast($('#w-active').checked ? 'Boas-vindas salva e ligada' : 'Boas-vindas salva (desligada)');
+  } catch (err) { toast(err.message); loadWelcome(); }
+};
+
+loadWelcome().catch((err) => toast(err.message));
 loadStatus().catch((err) => toast(err.message));
 loadRules().catch((err) => toast(err.message));
 </script>

@@ -147,16 +147,33 @@ function followButton(rule: Rule): Button {
 function openingMessage(rule: Rule, username: string) {
   const text = fill(rule.dm_text, { username });
   if (rule.require_follow) return buttons(text, [confirmButton(rule)]);
-  if (rule.link_url) {
+  if (rule.link_url && rule.link_url !== OFFER_LINK) {
     return buttons(text, [{ type: 'web_url', url: rule.link_url, title: (rule.link_button_label || 'Abrir link').slice(0, 20) }]);
   }
   return text ? { text } : undefined;
 }
 
-function linkMessage(rule: Rule, username: string, name = '') {
+/** `{oferta_ebook}` as the link: the ebook site issues a fresh 24h welcome-price link for this person at send time. */
+const OFFER_LINK = '{oferta_ebook}';
+
+async function resolveLink(env: Env, link: string, userId: string): Promise<string> {
+  if (link !== OFFER_LINK) return link;
+  if (!env.EBOOK_OFFER_URL || !env.EBOOK_OFFER_TOKEN) throw new Error('ebook offer not configured');
+  const res = await (env.EBOOK ?? globalThis).fetch(env.EBOOK_OFFER_URL, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${env.EBOOK_OFFER_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ follower_id: `ig_${userId}` }),
+  });
+  if (!res.ok) throw new Error(`ebook offer ${res.status}`);
+  const { url } = await res.json<{ url: string }>();
+  return url;
+}
+
+async function linkMessage(env: Env, rule: Rule, userId: string, username: string, name = '') {
   const text = fill(rule.link_text || rule.dm_text, { username, name });
   if (rule.link_url) {
-    return buttons(text, [{ type: 'web_url', url: rule.link_url, title: (rule.link_button_label || 'Abrir link').slice(0, 20) }]);
+    const url = await resolveLink(env, rule.link_url, userId);
+    return buttons(text, [{ type: 'web_url', url, title: (rule.link_button_label || 'Abrir link').slice(0, 20) }]);
   }
   return text ? { text } : undefined;
 }
@@ -181,7 +198,7 @@ function isRateLimited(err: unknown): boolean {
 
 const isRetryable = (err: unknown) => isThreadLocked(err) || isRateLimited(err);
 
-type PendingKind = 'dm' | 'reply' | 'link';
+type PendingKind = 'dm' | 'reply' | 'link' | 'followup';
 
 async function enqueue(
   env: Env,
@@ -221,6 +238,7 @@ export async function retryOne(env: Env, id: number): Promise<void> {
   const ev = { ruleId: p.rule_id, platform: 'instagram' as const, userId: p.user_id, username: p.username, ref: p.ref };
   const recipient = JSON.parse(p.recipient) as Recipient;
   if (p.kind === 'link') return sendScheduledLink(env, p);
+  if (p.kind === 'followup') return sendFollowup(env, p);
   try {
     if (p.kind === 'reply' && 'comment_id' in recipient) {
       await graph(env, `${recipient.comment_id}/replies`, { method: 'POST', params: { message: JSON.parse(p.message) } });
@@ -246,14 +264,15 @@ export async function retryOne(env: Env, id: number): Promise<void> {
  * messaged or tapped before (otherwise "User consent is required"), so most first-timers still get the button.
  */
 async function alreadyFollowsLink(env: Env, rule: Rule, userId: string) {
-  if (!rule.require_follow) return undefined;
+  // Ebook offer: known followers also go through the button so the delay applies to everyone.
+  if (!rule.require_follow || (rule.link_url === OFFER_LINK && rule.link_delay_minutes > 0)) return undefined;
   try {
     const p = await graph<{ name?: string; username?: string; is_user_follow_business?: boolean }>(env, userId, {
       params: { fields: 'name,username,is_user_follow_business' },
     });
     if (p.is_user_follow_business !== true) return undefined;
     await logEvent(env, { ruleId: rule.id, platform: 'instagram', type: 'link_sent', userId, username: p.username ?? '', detail: 'já seguia' });
-    return linkMessage(rule, p.username ?? '', p.name ?? '');
+    return await linkMessage(env, rule, userId, p.username ?? '', p.name ?? '');
   } catch {
     return undefined;
   }
@@ -380,7 +399,7 @@ const FOLLOW_CHECK_DELAYS = [0, 1500, 3000, 5000];
  * Right after the first tap Meta may still answer "User consent is required" — consent lands a few
  * seconds later — so retry before deciding. Returns undefined if it never answers.
  */
-async function checkFollow(env: Env, rule: Rule, userId: string): Promise<{ follows: boolean; username: string; name: string } | undefined> {
+async function checkFollow(env: Env, ruleId: number | undefined, userId: string): Promise<{ follows: boolean; username: string; name: string } | undefined> {
   let lastError = '';
   for (const delay of FOLLOW_CHECK_DELAYS) {
     if (delay) await new Promise((r) => setTimeout(r, delay));
@@ -393,7 +412,7 @@ async function checkFollow(env: Env, rule: Rule, userId: string): Promise<{ foll
       lastError = errorMessage(err);
     }
   }
-  await logEvent(env, { ruleId: rule.id, platform: 'instagram', type: 'error', userId, detail: `follow check: ${lastError}` });
+  await logEvent(env, { ruleId, platform: 'instagram', type: 'error', userId, detail: `follow check: ${lastError}` });
   return undefined;
 }
 
@@ -414,6 +433,71 @@ async function scheduleLink(env: Env, rule: Rule, userId: string, username: stri
   await logEvent(env, { ruleId: rule.id, platform: 'instagram', type: 'link_scheduled', userId, username, detail: `${rule.link_delay_minutes} min` });
 }
 
+// ---------- Welcome offer for new followers ----------
+// Not a comment automation: after any follow-gated automation delivers its link, one extra DM goes out
+// later with an offer. Configured in the panel (settings welcome_*). Each person gets it once, and it must
+// leave inside the 24h window the button tap opened, so it expires two hours early to leave room for retries.
+
+export const WELCOME_DEFAULTS = {
+  welcome_active: '0',
+  welcome_delay_minutes: '90',
+  welcome_text: '',
+  welcome_button: 'Quero o ebook',
+  welcome_link: OFFER_LINK,
+};
+export type WelcomeSettings = typeof WELCOME_DEFAULTS;
+
+export async function getWelcome(env: Env): Promise<WelcomeSettings> {
+  const keys = Object.keys(WELCOME_DEFAULTS) as (keyof WelcomeSettings)[];
+  const values = await Promise.all(keys.map((k) => getSetting(env, k)));
+  return Object.fromEntries(keys.map((k, i) => [k, values[i] ?? WELCOME_DEFAULTS[k]])) as WelcomeSettings;
+}
+
+async function scheduleFollowup(env: Env, sourceRuleId: number, userId: string, username: string) {
+  const w = await getWelcome(env);
+  if (w.welcome_active !== '1' || !w.welcome_text.trim()) return;
+  const seen = await env.DB.prepare(
+    `SELECT 1 FROM events WHERE user_id = ? AND type IN ('welcome_scheduled', 'welcome_sent') LIMIT 1`,
+  ).bind(userId).first();
+  if (seen) return;
+  const delay = Math.min(Math.max(Number(w.welcome_delay_minutes) || 90, 1), 600);
+  await env.DB.prepare(
+    `INSERT INTO pending_sends (kind, rule_id, recipient, message, user_id, username, ref, last_error, next_at, expires_at)
+     VALUES ('followup', NULL, ?, '{}', ?, ?, '', '', unixepoch() + ?, unixepoch() + ?)`,
+  ).bind(JSON.stringify({ id: userId }), userId, username, delay * 60, DM_WINDOW - 2 * 3600).run();
+  await logEvent(env, { platform: 'instagram', type: 'welcome_scheduled', userId, username, detail: `${delay} min após a automação ${sourceRuleId}` });
+}
+
+async function sendFollowup(env: Env, p: { id: number; user_id: string; username: string; expires_at: number }) {
+  const ev = { platform: 'instagram' as const, userId: p.user_id, username: p.username };
+  const done = () => env.DB.prepare('DELETE FROM pending_sends WHERE id = ?').bind(p.id).run();
+  const expired = Math.floor(Date.now() / 1000) >= p.expires_at;
+  const w = await getWelcome(env);
+  if (w.welcome_active !== '1' || !w.welcome_text.trim()) return void (await done());
+  try {
+    const result = await checkFollow(env, undefined, p.user_id);
+    if (!result) {
+      if (expired) { await done(); await logEvent(env, { ...ev, type: 'gave_up', detail: 'follow check (boas-vindas)' }); }
+      return;
+    }
+    if (!result.follows) {
+      await done();
+      await logEvent(env, { ...ev, type: 'welcome_skipped', detail: 'deixou de seguir' });
+      return;
+    }
+    const text = fill(w.welcome_text, { username: result.username, name: result.name });
+    const url = await resolveLink(env, w.welcome_link, p.user_id);
+    await send(env, { id: p.user_id }, buttons(text, [{ type: 'web_url', url, title: (w.welcome_button || 'Abrir link').slice(0, 20) }]));
+    await done();
+    await logEvent(env, { ...ev, type: 'welcome_sent' });
+  } catch (err) {
+    if (!isRetryable(err) || expired) {
+      await done();
+      await logEvent(env, { ...ev, type: 'gave_up', detail: errorMessage(err) });
+    }
+  }
+}
+
 async function sendScheduledLink(env: Env, p: { id: number; rule_id: number; user_id: string; username: string; expires_at: number }) {
   const ev = { ruleId: p.rule_id, platform: 'instagram' as const, userId: p.user_id, username: p.username };
   const done = () => env.DB.prepare('DELETE FROM pending_sends WHERE id = ?').bind(p.id).run();
@@ -421,7 +505,7 @@ async function sendScheduledLink(env: Env, p: { id: number; rule_id: number; use
   const rule = await getRule(env, p.rule_id);
   if (!rule) return void (await done());
   try {
-    const result = await checkFollow(env, rule, p.user_id);
+    const result = await checkFollow(env, rule.id, p.user_id);
     if (!result) {
       // Meta didn't answer; the cron picks it up again in a few minutes.
       if (expired) { await done(); await logEvent(env, { ...ev, type: 'gave_up', detail: 'follow check' }); }
@@ -433,10 +517,11 @@ async function sendScheduledLink(env: Env, p: { id: number; rule_id: number; use
       await logEvent(env, { ...ev, type: 'unfollowed' });
       return;
     }
-    const msg = linkMessage(rule, result.username, result.name);
+    const msg = await linkMessage(env, rule, p.user_id, result.username, result.name);
     if (msg) await send(env, { id: p.user_id }, msg);
     await done();
     await logEvent(env, { ...ev, type: 'link_sent' });
+    if (rule.require_follow) await scheduleFollowup(env, rule.id, p.user_id, result.username);
   } catch (err) {
     if (!isRetryable(err) || expired) {
       await done();
@@ -471,7 +556,7 @@ async function onButton(env: Env, userId: string, payload: string) {
   let name = '';
   if (rule.require_follow) {
     // Fail closed: without a confirmed follow, ask to follow and tap again (the next tap usually passes).
-    const result = await checkFollow(env, rule, userId);
+    const result = await checkFollow(env, rule.id, userId);
     username = result?.username ?? '';
     name = result?.name ?? '';
     await logEvent(env, { ruleId: rule.id, platform: 'instagram', type: 'button_click', userId, username });
@@ -499,10 +584,11 @@ async function onButton(env: Env, userId: string, payload: string) {
     }
     await logEvent(env, { ruleId: rule.id, platform: 'instagram', type: 'button_click', userId, username });
   }
-  const msg = linkMessage(rule, username, name);
+  const msg = await linkMessage(env, rule, userId, username, name);
   if (msg) {
     await send(env, { id: userId }, msg);
     await logEvent(env, { ruleId: rule.id, platform: 'instagram', type: 'link_sent', userId, username });
+    if (rule.require_follow) await scheduleFollowup(env, rule.id, userId, username);
   }
 }
 

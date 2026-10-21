@@ -1,7 +1,9 @@
 import { Hono } from 'hono';
 import { basicAuth } from 'hono/basic-auth';
+import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import adminHtml from './admin.html';
 import { FAVICON_SVG } from './favicon';
+import { ICONS, loginPage, MANIFEST } from './pwa';
 import { cleanup, deleteRule, deleteSettings, getSetting, listRules, saveRule, setSettings } from './db';
 import * as ig from './instagram';
 import { findRule } from './match';
@@ -97,6 +99,34 @@ const resultPage = (msg: string) =>
 app.get('/favicon.svg', (c) =>
   c.body(FAVICON_SVG, 200, { 'content-type': 'image/svg+xml', 'cache-control': 'public, max-age=86400' }),
 );
+app.get('/manifest.webmanifest', (c) => c.body(JSON.stringify(MANIFEST), 200, { 'content-type': 'application/manifest+json' }));
+app.get('/:file{(apple-touch-icon|icon-192|icon-512)\\.png}', (c) => {
+  const data = ICONS[c.req.param('file')];
+  return data ? c.body(data, 200, { 'content-type': 'image/png', 'cache-control': 'public, max-age=86400' }) : c.notFound();
+});
+
+// ---------- Login: cookie session so the panel works as a Home Screen app on iPhone ----------
+
+const SESSION_COOKIE = 'autodm_session';
+const SESSION_DAYS = 365;
+// Derived from the password: changing ADMIN_PASSWORD signs every device out.
+const sessionValue = (env: Env) => hmacSha256Hex(env.ADMIN_PASSWORD, 'autodm-session-v1');
+
+app.get('/login', (c) => c.html(loginPage()));
+app.post('/login', async (c) => {
+  const form = await c.req.parseBody();
+  const password = typeof form.password === 'string' ? form.password : '';
+  if (!c.env.ADMIN_PASSWORD || !safeEqual(password, c.env.ADMIN_PASSWORD)) return c.html(loginPage(true), 401);
+  setCookie(c, SESSION_COOKIE, await sessionValue(c.env), {
+    httpOnly: true, secure: true, sameSite: 'Lax', path: '/', maxAge: SESSION_DAYS * 86400,
+  });
+  return c.redirect('/admin');
+});
+app.get('/logout', (c) => {
+  deleteCookie(c, SESSION_COOKIE, { path: '/' });
+  return c.redirect('/login');
+});
+
 app.get('/favicon.ico', (c) => c.redirect('/favicon.svg', 301));
 
 app.get('/privacy', (c) =>
@@ -116,7 +146,12 @@ app.get('/privacy', (c) =>
 const admin = new Hono<{ Bindings: Env }>();
 admin.use('*', async (c, next) => {
   if (!c.env.ADMIN_PASSWORD) return c.text('ADMIN_PASSWORD não configurada', 500);
-  return basicAuth({ username: 'admin', password: c.env.ADMIN_PASSWORD })(c, next);
+  const cookie = getCookie(c, SESSION_COOKIE);
+  if (cookie && safeEqual(cookie, await sessionValue(c.env))) return next();
+  // Basic auth still works for scripts (curl -u admin:...).
+  if (c.req.header('authorization')) return basicAuth({ username: 'admin', password: c.env.ADMIN_PASSWORD })(c, next);
+  if (c.req.path.startsWith('/api/')) return c.json({ error: 'Sessão expirada' }, 401);
+  return c.redirect('/login');
 });
 
 admin.get('/admin', (c) => c.html(adminHtml));
@@ -158,6 +193,28 @@ admin.get('/api/status', async (c) => {
 
 admin.get('/api/rules', async (c) => c.json(await listRules(c.env)));
 
+// Welcome offer for new followers (not a comment automation; see ig.getWelcome).
+admin.get('/api/welcome', async (c) => c.json(await ig.getWelcome(c.env)));
+
+admin.put('/api/welcome', async (c) => {
+  const b = await c.req.json<Partial<Record<keyof ig.WelcomeSettings, string>>>();
+  const w = { ...(await ig.getWelcome(c.env)), ...b };
+  const delay = Number(w.welcome_delay_minutes);
+  if (!Number.isInteger(delay) || delay < 1 || delay > 600) return c.json({ error: 'Espera: de 1 a 600 minutos' }, 400);
+  if (w.welcome_text.length > 1000) return c.json({ error: 'Mensagem muito longa (máx. 1000 caracteres)' }, 400);
+  if (!w.welcome_button.trim() || w.welcome_button.length > 20) return c.json({ error: 'Botão: de 1 a 20 caracteres' }, 400);
+  if (w.welcome_link !== '{oferta_ebook}' && !/^https?:\/\//.test(w.welcome_link)) return c.json({ error: 'Link precisa começar com http(s):// (ou {oferta_ebook})' }, 400);
+  if (w.welcome_active === '1' && !w.welcome_text.trim()) return c.json({ error: 'Escreva a mensagem antes de ligar' }, 400);
+  await setSettings(c.env, {
+    welcome_active: w.welcome_active === '1' ? '1' : '0',
+    welcome_delay_minutes: String(delay),
+    welcome_text: w.welcome_text,
+    welcome_button: w.welcome_button.trim(),
+    welcome_link: w.welcome_link.trim(),
+  });
+  return c.json(await ig.getWelcome(c.env));
+});
+
 function validate(body: Partial<Rule>): string | undefined {
   if (!body.name?.trim()) return 'Nome obrigatório';
   if (body.platform !== 'instagram' && body.platform !== 'youtube') return 'Plataforma inválida';
@@ -171,7 +228,7 @@ function validate(body: Partial<Rule>): string | undefined {
   if (body.require_follow && !body.link_url && !body.link_text) return 'Com "exigir seguir", defina o link ou a mensagem final';
   const delay = body.link_delay_minutes ?? 0;
   if (!Number.isInteger(delay) || delay < 0 || delay > 600) return 'Espera do link: de 0 a 600 minutos';
-  if (body.link_url && !/^https?:\/\//.test(body.link_url)) return 'Link precisa começar com http(s)://';
+  if (body.link_url && body.link_url !== '{oferta_ebook}' && !/^https?:\/\//.test(body.link_url)) return 'Link precisa começar com http(s):// (ou {oferta_ebook})';
   return undefined;
 }
 

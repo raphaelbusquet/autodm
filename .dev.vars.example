@@ -1,6 +1,10 @@
-ADMIN_PASSWORD=troque-isto
+# Local development only. Fill values in the ignored .dev.vars file.
+# Production: npx wrangler secret put NAME --config wrangler.jsonc
+ADMIN_PASSWORD=
 IG_APP_ID=
 IG_APP_SECRET=
-IG_VERIFY_TOKEN=uma-string-aleatoria
+META_APP_SECRET=
+IG_VERIFY_TOKEN=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+EBOOK_OFFER_TOKEN=

@@ -2,11 +2,13 @@
   "name": "autodm",
   "private": true,
   "type": "module",
+  "description": "Automações de comentários e mensagens com Cloudflare Workers e D1.",
+  "engines": { "node": ">=22.12.0" },
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 migrations apply autodm --local",
-    "db:migrate": "wrangler d1 migrations apply autodm --remote",
+    "dev": "wrangler dev --config wrangler.local.jsonc",
+    "deploy": "wrangler deploy --config wrangler.jsonc",
+    "db:migrate:local": "wrangler d1 migrations apply autodm --local --config wrangler.local.jsonc",
+    "db:migrate": "wrangler d1 migrations apply autodm --remote --config wrangler.jsonc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
